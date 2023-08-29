@@ -11,7 +11,7 @@ const width = 800,
       margin = 60,
       margins = { top: margin, right: margin, bottom: margin, left: margin },
       dx = 100,         // vertical node spacing
-      dy = width / 4,  // horizontal node spacing
+      dy = width / 6,  // horizontal node spacing
       strokeWidth = 8,
       arrowWidth = 2.5, // in units of strokeWidth
       gradientEnd = width
@@ -44,40 +44,45 @@ const make_marker = (id, marker_color) => {
 // Position nodes
 const reposition_nodes = (d) => {
   let childIndex = 0
+  let xstart = 50
   if (d.data['Next Degree']) {
     d.x = 0
     //d.x0 = 0
-  } else if (d.data['Job Opportunities']) {
-    childIndex = d.parent.children.filter(c => c.data['Job Opportunities']).findIndex(c => c.id === d.id)
-    d.x = 100 + childIndex*0.8*radius
+  } else if (d.data['Educational Opportunities']) {
+    childIndex = d.parent.children.filter(c => c.data['Educational Opportunities']).findIndex(c => c.id === d.id)
+    d.x = xstart + childIndex*0.8*radius
     //d.x0 = (childIndex)*100
     d.y = d.parent.y
     //d.y0 = d.parent.y0
-  } else if (d.data['Educational Opportunities']) {
-    childIndex = d.parent.children.filter(c => c.data['Educational Opportunities']).findIndex(c => c.id === d.id)
-    let xstart = -d.parent.children.filter(c => c.data['Educational Opportunities']).length*0.8*radius - 0.8*radius
-    d.x = xstart + childIndex*0.8*radius
-    d.y = d.parent.y + 1.5*radius + arrowWidth*strokeWidth + 1
+  } else if (d.data['Job Opportunities']) {
+    childIndex = d.parent.children.filter(c => c.data['Job Opportunities']).findIndex(c => c.id === d.id)
+    //let xstart = -d.parent.children.filter(c => c.data['Job Opportunities']).length*0.8*radius - 0.8*radius
+    xstart += xstart/3 + d.parent.children.filter(c => c.data['Educational Opportunities']).length*0.8*radius //+ 0.8*radius
+    d.x =  xstart + childIndex*0.8*radius
+    d.y = d.parent.y // + 1.5*radius + arrowWidth*strokeWidth + 1
   }
   return d
 }
 
 const update = (source, rootNode) => {
   console.log('Updating nodes')
-  console.log(source)
-  if (source.data.Career && rootNode.children[0].data.Career != source.data.Career){
-    console.log('crap')
-    console.log(source)
-    console.log(rootNode)
-  } 
+  console.log('Source Node:', source)
+  console.log('Root Node:', rootNode)
 
   const svg = d3.select("svg")
   const gLink = svg.select(".links")
   const gNode = svg.select(".nodes")
 
+  // If the source node has the children hidden, show them
+  if (!source.children) source.children = source._children
+
   // get direct descendants (not all descendants)
-  const nodes = rootNode.descendants().reverse();
+  let nodes = rootNode.descendants().reverse();
+
+  // Filter node and links to only include those that are children of source or Degree nodes
+  nodes = nodes.filter(n => (n.parent && n.parent.id === source.id) || (n.data['Next Degree'] && n.depth <= source.depth))
   let links = rootNode.links()
+  links = links.filter(l => l.source.id === source.id )
 
   // recalulate tree, add x and y coordinates
   tree(rootNode);
@@ -121,6 +126,7 @@ const update = (source, rootNode) => {
         .attr("stroke-opacity", 1)
         .each(d => make_marker(d.target.id, color(d.target.y/gradientEnd)))
         .attr("marker-end", d => `url('#${d.target.id}')`)
+        .attr("display", "none") // Getting rid of arrow/links for now
         .attr("stroke-width", d => {
           return d.source.data['Next Degree'] ? strokeWidth : strokeWidth / 2
           //return Math.min(10 * d.target.data.user_count, radius) //* d.user_count//Math.floor(Math.random() * radius + 1);
@@ -130,8 +136,8 @@ const update = (source, rootNode) => {
           .attr("d", d => {
             const origin = { x: d.source.x, y: d.source.y }
             const target = { 
-              x: !d.target.data['Job Opportunities'] ? d.target.x : d.target.x - radius/3 - arrowWidth*strokeWidth,
-              y: d.target.data['Job Opportunities'] ? d.target.y : d.target.y - 1.5*radius - arrowWidth*strokeWidth }
+              x: d.target.data['Next Degree'] ? d.target.x : d.target.x - radius/3 - arrowWidth*strokeWidth,
+              y: !d.target.data['Next Degree'] ? d.target.y : d.target.y - 1.5*radius - arrowWidth*strokeWidth }
             return linkGen({ source: origin, target: target })
           })
         ),
@@ -142,8 +148,8 @@ const update = (source, rootNode) => {
           .attr("d", d => {
             const origin = { x: d.source.x, y: d.source.y }
             const target = { 
-              x: !d.target.data['Job Opportunities'] ? d.target.x : d.target.x - radius/3 - arrowWidth*strokeWidth, 
-              y: d.target.data['Job Opportunities'] ? d.target.y : d.target.y - 1.5*radius - arrowWidth*strokeWidth }
+              x: d.target.data['Next Degree'] ? d.target.x : d.target.x - radius/3 - arrowWidth*strokeWidth,
+              y: !d.target.data['Next Degree'] ? d.target.y : d.target.y - 1.5*radius - arrowWidth*strokeWidth }
             return linkGen({ source: origin, target: target });
           })
         ),
@@ -162,25 +168,25 @@ const update = (source, rootNode) => {
       .data(links, d => d.target.id)
       .join(
         enter => enter.insert('text', 'path')   
-          .text(d => d.target.data['Next Degree'] ? 'Next Degree': d.target.data['Job Opportunities'] ? 'Jobs' : 'Courses')  
-          .attr("x", d => d.target.data['Next Degree'] ? source.y : source.x )
-          .attr("y", d => d.target.data['Next Degree'] ? source.x : source.y )
-          .attr("text-anchor", d => d.target.data['Job Opportunities'] ? "end" : "start")//d._children ? "end" : "start")
-          .attr("transform", d => d.target.data['Next Degree'] ? '' : 'rotate(-90)') 
+          .text(d => d.target.data['Next Degree'] ? 'Next Degree:': d.target.data['Job Opportunities'] ? 'Jobs:' : 'Courses:')  
+          .attr("x", d => d.target.data['Next Degree'] ? source.y : source.y )
+          .attr("y", d => d.target.data['Next Degree'] ? source.x : source.x )
+          .attr("text-anchor", "middle")//d._children ? "end" : "start")
+          //.attr("transform", d => d.target.data['Next Degree'] ? '' : 'rotate(-90)') 
           .attr("font-family", "georgia")
           .attr("fill", "black")
           .attr("stroke-width", 0.1)
           .attr("opacity", 1)
           .call(enter => enter.transition(transition)
             //.attr("opacity", 1)
-            .attr("x", d => d.target.data['Next Degree'] ? d.source.y + 1.8*radius : d.target.data['Job Opportunities'] ? d.source.x - radius/1.6 : d.source.x + radius/1.6) //d._children ? -6 : 6)
-            .attr("y", d => d.target.data['Next Degree'] ? d.source.x - strokeWidth : d.source.y - strokeWidth)
+            .attr("x", d => d.target.data['Next Degree'] ? d.target.y : d.target.y ) //d._children ? -6 : 6)
+            .attr("y", d => d.target.data['Next Degree'] ? d.target.x - radius/2 - 6 : d.target.x - radius/2 )
           ),
         update => update
           .call(update => update.transition(transition)
           //.attr("opacity", 1)
-            .attr("x", d => d.target.data['Next Degree'] ? d.source.y + 1.8*radius : d.target.data['Job Opportunities'] ? d.source.x - radius/1.6 : d.source.x + radius/1.6) //d._children ? -6 : 6)
-            .attr("y", d => d.target.data['Next Degree'] ? d.source.x - strokeWidth : d.source.y - strokeWidth)
+            .attr("x", d => d.target.data['Next Degree'] ? d.target.y : d.target.y ) //d._children ? -6 : 6)
+            .attr("y", d => d.target.data['Next Degree'] ? d.target.x - radius/2 - 6: d.target.x - radius/2)
           )
       )
     
@@ -206,7 +212,7 @@ const update = (source, rootNode) => {
           .attr('width', 3 * radius)
           .attr('height', d => d.data['Next Degree'] ? radius : radius/1.5)
           .attr("rx", d => d.data['Next Degree'] ? 0 : d.data['Educational Opportunities'] ? radius/5 : radius/3)
-          .attr("stroke-width", 2)
+          .attr("stroke-width", d => d.data['Next Degree'] ? 2 : 1)
           .attr('stroke', d => color(d.y/gradientEnd))
           .attr("fill", '#f7f7f9') //d => d._children ? "#555" : "#999")sd
         )
@@ -225,7 +231,8 @@ const update = (source, rootNode) => {
         .call(enter => enter.transition(transition)
           .attr("transform", d => `translate(${d.y},${d.x})`)
           .attr("fill-opacity", 1)
-          .attr("stroke-opacity", 1)
+          .attr("stroke-opacity", d => (d.id === source.id || (d.parent && d.parent.id === source.id)) ? 1 : 0)  
+          //.attr("stroke-opacity", 1)
         )
         .on("click", (event, d) => {         // recursively update on click event,  toggle switch for turning children on and off
             d.children = d.children ? null : d._children;
@@ -252,7 +259,7 @@ const update = (source, rootNode) => {
         .call(update => update.transition(transition)
           .attr("transform", d => `translate(${d.y},${d.x})`)
           .attr("fill-opacity", 1)
-          .attr("stroke-opacity", 1)          
+          .attr("stroke-opacity", d => (d.id === source.id || (d.parent && d.parent.id === source.id)) ? 1 : 0)   
         ),
       exit => exit
         .call(exit => exit.transition(transition)
@@ -332,7 +339,8 @@ const drawChart = (data, svgContainerRef) => {
     //.attr("cursor", "pointer")
     //.attr("pointer-events", "all")
 
-  let selectedCareer = 'Health'
+  //let selectedCareer = 'Health'
+  let selectedCareer = 'Education'
   let hierarchyData = data.hierarchyData.filter(r => r.Career == null || r.Career === selectedCareer)
   console.log(hierarchyData)
   let rootData = d3.stratify()
